@@ -28,13 +28,13 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Configurar Android SDK (API 34 + Build Tools 34.0.0)
-        uses: android-actions/setup-android@v3
-
-      - name: Instalar pacotes do Android SDK
+      - name: Instalar Android SDK (API 34 + Build Tools 34.0.0)
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> $GITHUB_ENV
+          SDKMGR="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMGR" --licenses > /dev/null || true
+          "$SDKMGR" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Configurar Python & Pillow
         uses: actions/setup-python@v5
