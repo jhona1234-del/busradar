@@ -1,0 +1,31 @@
+# Build outputs & binaries
+build/
+*.apk
+*.idsig
+*.apk.*
+META-INF/
+
+# Signing secrets (NUNCA subir a keystore ou senhas no repositório!)
+*.keystore
+*.jks
+*.pem
+*.key
+.env
+.env.*
+
+# Hardware / Unrelated local files
+ESP32S3_MouseJiggler/
+nfc-inspector/
+reset_to_boot.ps1
+trigger_boot.py
+NFC-Inspector*
+
+# Python / OS / Scratch
+__pycache__/
+*.pyc
+*.pyo
+*.log
+scratch/
+.DS_Store
+Thumbs.db
+desktop.ini

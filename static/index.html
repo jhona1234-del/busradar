@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#1a1e29">
+  <title>BusRadar</title>
+  
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css?v=2.5.8" />
+
+  <!-- Global Diagnostic Logger & Fatal Error Handler -->
+  <script>
+    window.appLogs = [];
+    window.addAppLog = function(msg) {
+      const time = new Date().toLocaleTimeString();
+      const lineText = "[" + time + "] " + msg;
+      window.appLogs.push(lineText);
+      if (window.appLogs.length > 250) window.appLogs.shift();
+
+      const el = document.getElementById("debug-log-content");
+      if (el) {
+        const div = document.createElement("div");
+        div.className = "log-line" + (msg.includes("FAIL") || msg.includes("ERR") || msg.includes("Erro") ? " log-error" : (msg.includes("GPS") ? " log-gps" : ""));
+        div.textContent = lineText;
+        el.appendChild(div);
+        el.scrollTop = el.scrollHeight;
+      }
+      const badge = document.getElementById("log-count-badge");
+      if (badge) badge.textContent = window.appLogs.length;
+    };
+
+    window.onerror = function(msg, src, line, col, err) {
+      const fatal = "ERRO FATAL JS: " + msg + " (" + (src ? src.split("/").pop() : "") + ":" + line + ")";
+      window.addAppLog(fatal);
+      if (window.AndroidBridge && window.AndroidBridge.log) {
+        window.AndroidBridge.log("JS_FATAL", fatal);
+      } else {
+        try {
+          fetch("/api/log", { method: "POST", headers: { "Content-Type": "text/plain" }, body: fatal }).catch(() => {});
+        } catch (e) {}
+      }
+      const st = document.getElementById("status-text");
+      if (st) st.textContent = "Erro JS: " + msg + " (" + lin + ":" + col + ")";
+      return false;
+    };
+  </script>
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header>
+    <div class="logo-area" id="app-logo-area" title="Toque 5 vezes para o Modo Desenvolvedor">
+      <img src="icon.png" class="logo-img" alt="BusRadar" />
+      <div class="logo-title">
+        <h1>BusRadar</h1>
+        <span>Ônibus em Tempo Real</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <a id="btn-header-download" href="BusRadar.apk" download="BusRadar.apk" class="btn-icon" title="Baixar Aplicativo Android (.apk)" style="display:none;text-decoration:none;align-items:center;justify-content:center;color:#10b981;font-weight:bold;">📥</a>
+      <button id="btn-refresh" class="btn-icon" title="Atualizar dados">🔄</button>
+      <button id="btn-my-loc" class="btn-icon" title="Minha Localização (GPS)">📍</button>
+      <button id="btn-home-loc" class="btn-icon" title="Minha Casa">🏠</button>
+    </div>
+  </header>
+
+  <!-- Developer Mode Live Telemetry Bar (Ativado com 5 toques no logo) -->
+  <div id="dev-telemetry-bar" class="dev-telemetry-bar" style="display:none;">
+    <div class="dev-badge">🛠️ MODO DEV</div>
+    <div class="dev-item" id="dev-gps-info">GPS: Conectando...</div>
+    <div class="dev-item" id="dev-net-info">REDE: Nativo</div>
+    <div class="dev-item" id="dev-tiles-info">TILES: Google</div>
+    <button id="dev-btn-switch-tile" class="dev-action-btn">Trocar Mapa</button>
+    <button id="dev-btn-config-tile" class="dev-action-btn">🔑 Chave API / Mapa</button>
+    <button id="dev-btn-toggle-demo" class="dev-action-btn">Simular Ônibus</button>
+    <button id="dev-btn-copy-log" class="dev-action-btn">Copiar Log</button>
+    <button id="dev-btn-close-dev" class="dev-action-btn dev-close-btn" title="Desativar Modo Desenvolvedor">✕ Desativar</button>
+  </div>
+
+  <!-- Main Container: Map + Panel -->
+  <div class="app-container">
+
+    <!-- Map Area -->
+    <div id="map-container">
+      <div class="map-floating-bar">
+        <div class="map-pill" id="status-indicator">
+          <span class="status-dot"></span>
+          <span id="status-text">Iniciando...</span>
+        </div>
+        <div class="map-pill" id="active-buses-count">
+          🚌 Buscando ônibus...
+        </div>
+        <button id="btn-toggle-corridors" class="btn-toggle-corridors" title="Alternar linhas dos ônibus na tela (Zoom >= 15)">
+          <span>🛣️</span> <span>Traçados na Tela</span>
+        </button>
+      </div>
+
+      <!-- Multi-Route Overlay Tray (Max 5 lines) -->
+      <div class="active-routes-tray" id="active-routes-tray">
+        <div class="active-routes-box">
+          <div class="active-routes-chips" id="active-routes-chips"></div>
+          <button class="btn-clear-routes" id="btn-clear-all-routes">Limpar</button>
+        </div>
+      </div>
+
+      <!-- Map div -->
+      <div id="map"></div>
+    </div>
+
+    <!-- Panel Area (Draggable / Resizable Sheet on Mobile) -->
+    <div class="panel" id="main-panel">
+      <!-- Drag Handle (Toque para recolher / expandir) -->
+      <div class="panel-drag-handle" id="panel-drag-handle" title="Toque para recolher ou expandir">
+        <div class="drag-bar"></div>
+        <div class="panel-handle-text" id="panel-handle-text">
+          <span class="handle-icon">▼</span>
+          <span class="handle-label">Recolher Aba</span>
+        </div>
+        <div class="panel-min-pill" id="panel-min-pill">
+          <span>▲</span> <span>Toque para ver linhas e paradas</span>
+        </div>
+      </div>
+
+      <!-- 4 Tabs -->
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="tab-home">
+          <span>🎯</span> Trajeto
+        </button>
+        <button class="tab-btn" data-tab="tab-stop">
+          <span>🚏</span> Parada
+        </button>
+        <button class="tab-btn" data-tab="tab-bus">
+          <span>🚌</span> Ônibus
+        </button>
+        <button class="tab-btn" data-tab="tab-favs">
+          <span>⭐</span> Salvos
+        </button>
+      </div>
+
+      <!-- TAB 1: Trajeto / Planejador de Viagem -->
+      <div id="tab-home" class="tab-content active">
+        <!-- Origem & Destino Config Card -->
+        <div class="route-setup-card">
+          <!-- Row 1: Origem -->
+          <div class="setup-row" id="row-origin">
+            <div class="setup-icon" id="icon-origin">📍</div>
+            <div class="setup-info">
+              <div class="setup-label">Origem (Embarque)</div>
+              <div class="setup-value" id="label-origin">Meu GPS (Posição Atual)</div>
+            </div>
+            <div class="setup-quick-pills">
+              <button class="btn-pill-action active" id="btn-orig-gps" title="Usar Meu GPS">📍 GPS</button>
+              <button class="btn-pill-action" id="btn-orig-home" title="Usar Minha Casa">🏠 Casa</button>
+              <button class="btn-pill-action" id="btn-orig-map" title="Escolher no Mapa / Endereço">🗺️ Mudar</button>
+            </div>
+          </div>
+
+          <!-- Inverter Origem ⇄ Destino Button -->
+          <div class="swap-row-container">
+            <button class="btn-swap-route" id="btn-swap-route" title="Inverter Origem e Destino">
+              ⇅ Inverter Sentido
+            </button>
+          </div>
+
+          <!-- Row 2: Destino -->
+          <div class="setup-row" id="row-dest">
+            <div class="setup-icon" id="icon-dest">🏠</div>
+            <div class="setup-info">
+              <div class="setup-label">Destino (Desembarque)</div>
+              <div class="setup-value" id="label-dest">Minha Casa</div>
+            </div>
+            <div class="setup-quick-pills">
+              <button class="btn-pill-action active" id="btn-dest-home" title="Usar Minha Casa">🏠 Casa</button>
+              <button class="btn-pill-action" id="btn-dest-gps" title="Usar Meu GPS">📍 GPS</button>
+              <button class="btn-pill-action" id="btn-dest-map" title="Escolher no Mapa / Endereço">🗺️ Mudar</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Raio de Caminhada até Destino -->
+        <div class="radius-row">
+          <span class="radius-label">🚶 Raio a pé até Destino:</span>
+          <div class="radius-button-group">
+            <button class="btn-radius" data-radius="300">300m</button>
+            <button class="btn-radius" data-radius="500">500m</button>
+            <button class="btn-radius" data-radius="800">800m</button>
+            <button class="btn-radius active" data-radius="1200">1.2km</button>
+            <button class="btn-radius" data-radius="2000">2km</button>
+          </div>
+        </div>
+
+        <!-- Botão IR / Calcular Possibilidades de Rota -->
+        <div class="calc-trip-action-wrap" style="margin:10px 0 12px 0;">
+          <button id="btn-calc-trip" class="btn-calc-trip">
+            <span>🚀</span> <span>IR • Traçar Melhores Rotas</span>
+          </button>
+        </div>
+
+        <!-- Matching Buses List -->
+        <div id="home-bus-list" class="bus-list">
+          <div class="empty-state">
+            <p>Selecione a Origem e o Destino acima e toque em <b>IR</b> para traçar as possibilidades de rota.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: Parada Selecionada -->
+      <div id="tab-stop" class="tab-content">
+        <div id="stop-details-empty" class="empty-state">
+          <p>Dê um toque em qualquer parada amarela ou verde no mapa para ver os ônibus chegando e linhas!</p>
+        </div>
+        <div id="stop-details-content" style="display:none">
+          <div class="stop-card-info">
+            <div class="stop-card-header-row">
+              <div>
+                <div class="stop-card-title" id="stop-title">Nome da Parada</div>
+                <div class="stop-card-desc" id="stop-code">Código: --</div>
+              </div>
+              <button class="btn-fav-toggle" id="btn-fav-stop">⭐ Salvar</button>
+            </div>
+            <!-- Quick Route Set Buttons -->
+            <div class="stop-route-actions" style="display:flex;gap:6px;margin-top:8px;">
+              <button class="btn-small btn-stop-route" id="btn-set-stop-orig" style="flex:1;">📍 Usar como Origem</button>
+              <button class="btn-small btn-stop-route" id="btn-set-stop-dest" style="flex:1;">🎯 Usar como Destino</button>
+            </div>
+          </div>
+
+          <div style="font-size:0.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin:6px 0;">
+            ⏱️ Ônibus Chegando Agora:
+          </div>
+          <div id="stop-forecasts-list" class="bus-list"></div>
+
+          <div style="font-size:0.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin:12px 0 4px 0;">
+            📋 Todas as Linhas que Passam Aqui:
+          </div>
+          <div id="stop-lines-wrap" class="lines-badges-wrap"></div>
+        </div>
+      </div>
+
+      <!-- TAB 3: Ônibus Selecionado & Central de Frotas -->
+      <div id="tab-bus" class="tab-content">
+        <!-- Detalhes do Ônibus Clicado -->
+        <div id="bus-details-content" style="display:none;margin-bottom:14px;">
+          <button id="btn-back-to-fleet" class="btn-back-to-fleet">
+            ← Voltar para Lista de Linhas
+          </button>
+          <div class="stop-card-info">
+            <div class="stop-card-header-row">
+              <div>
+                <div class="stop-card-title" id="bus-card-title">Ônibus</div>
+                <div class="stop-card-desc" id="bus-card-desc">Linha</div>
+              </div>
+              <div style="display:flex;gap:6px;">
+                <button class="btn-alarm-toggle" id="btn-alarm-bus" title="Tocar alarme quando estiver a 3 min">🔔 Avisar</button>
+                <button class="btn-fav-toggle" id="btn-fav-line">⭐ Salvar</button>
+              </div>
+            </div>
+            <div style="margin-top:6px;" id="bus-trace-btn-slot"></div>
+          </div>
+
+          <div style="font-size:0.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin:8px 0 4px 0;">
+            🚏 Próximas Paradas do Trajeto:
+          </div>
+          <div id="bus-stops-timeline" style="font-size:0.78rem;color:var(--text-muted)"></div>
+        </div>
+
+        <!-- Seção 1: Linhas com Traçado Ativo no Mapa -->
+        <div id="tracked-lines-section" style="margin-bottom:14px;">
+          <div class="fav-section-title">🗺️ Linhas com Traçado Ativo no Mapa</div>
+          <div id="tracked-lines-list" class="fav-list">
+            <div class="empty-state" style="padding:10px;"><p style="font-size:0.75rem;">Nenhum traçado ativo no momento.</p></div>
+          </div>
+        </div>
+
+        <!-- Seção 2: Ônibus em Movimento Próximos -->
+        <div id="nearby-buses-section">
+          <div class="fav-section-title">🚌 Ônibus em Circulação ao Redor</div>
+          <div id="nearby-buses-list" class="fav-list">
+            <div class="empty-state" style="padding:10px;"><p style="font-size:0.75rem;">Buscando frotas em movimento...</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 4: Favoritos / Salvos -->
+      <div id="tab-favs" class="tab-content">
+        <!-- Casa Salva Card -->
+        <div class="fav-section-title">🏠 Local de Casa Salvo</div>
+        <div class="route-setup-card" id="home-saved-card" style="margin-bottom:12px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-size:0.85rem;font-weight:700;color:#fff;" id="home-saved-address">Casa não configurada</div>
+              <div style="font-size:0.7rem;color:var(--text-muted);" id="home-saved-coords">Defina no mapa ou via GPS</div>
+            </div>
+            <button class="btn-small" id="btn-config-home-fav">📍 Mudar</button>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:8px;">
+            <button class="btn-small" id="btn-use-home-as-dest" style="flex:1;">🎯 Usar como Destino</button>
+            <button class="btn-small" id="btn-use-home-as-orig" style="flex:1;">📍 Usar como Origem</button>
+          </div>
+        </div>
+
+        <div class="fav-section-title" style="display:flex;justify-content:space-between;align-items:center;"><span>🚏 Paradas Salvas & Chegadas em Tempo Real</span><small style="color:var(--accent-light);font-size:0.7rem;font-weight:normal;">Tempo de chegada ao vivo</small></div>
+        <div id="fav-stops-list" class="fav-list">
+          <div class="empty-state"><p>Nenhuma parada salva ainda. Toque em uma parada no mapa e clique em ⭐ Salvar!</p></div>
+        </div>
+
+        <div class="fav-section-title" style="margin-top:16px;">🚌 Linhas Salvas</div>
+        <div id="fav-lines-list" class="fav-list">
+          <div class="empty-state"><p>Nenhuma linha salva ainda. Toque em um ônibus no mapa e clique em ⭐ Salvar Linha!</p></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Location Picker Banner -->
+  <div id="picker-banner">
+    <div class="picker-header">
+      <div class="picker-title" id="picker-title">🏠 Definindo Sua Casa</div>
+      <div style="font-size:0.72rem;color:var(--accent-light);">Arraste o pino ou toque no mapa</div>
+    </div>
+
+    <div class="search-box-row">
+      <input type="text" id="picker-search-input" class="search-input" placeholder="🔍 Digite rua, bairro ou cidade..." autocomplete="off" />
+      <button id="picker-btn-gps" class="btn-use-gps">📍 Usar GPS</button>
+      <div id="picker-search-results" class="search-results-dropdown"></div>
+    </div>
+
+    <div class="picker-actions">
+      <button id="picker-btn-cancel" class="btn-cancel">Cancelar</button>
+      <button id="picker-btn-save" class="btn-confirm">✓ Salvar Ponto Aqui</button>
+    </div>
+  </div>
+
+  <!-- Diagnostic Log Drawer -->
+  <div id="debug-log-drawer" class="debug-log-drawer">
+    <div class="debug-log-header">
+      <div style="font-weight:700;display:flex;align-items:center;gap:6px;">
+        <span>📋 Log de Diagnóstico</span>
+        <span id="log-count-badge" class="badge-pill">0</span>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button id="btn-clear-log" class="btn-small">Limpar</button>
+        <button id="btn-close-log" class="btn-small">✕ Fechar</button>
+      </div>
+    </div>
+    <div style="font-size:0.68rem;color:var(--text-muted);padding:4px 10px;border-bottom:1px solid var(--border);background:#11141b;">
+      📁 Arquivo salvo em: <b>Documentos/BusRadar_log.txt</b>
+    </div>
+    <div id="debug-log-content" class="debug-log-content"></div>
+  </div>
+
+  <!-- About Modal (Sobre o App) -->
+  <div id="about-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <img src="icon.png" style="width:38px;height:38px;border-radius:10px;" alt="Logo" />
+          <div>
+            <div style="font-size:1.05rem;font-weight:800;color:#fff;">BusRadar Enterprise</div>
+            <div style="font-size:0.72rem;color:var(--accent-light);">Versão 2.5.8 (Auto-Update Morphe-Style & GitHub Releases)</div>
+          </div>
+        </div>
+        <button id="btn-close-about" class="btn-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <!-- Developer Credits Card -->
+        <div class="developer-card" style="background:linear-gradient(135deg, rgba(37,99,235,0.18), rgba(16,185,129,0.18));border:1px solid rgba(59,130,246,0.35);border-radius:12px;padding:12px;margin-bottom:14px;">
+          <div style="font-size:0.7rem;font-weight:700;color:var(--accent-light);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">👨‍💻 Engenharia & Desenvolvimento</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+            <div style="font-size:1.4rem;">🚀</div>
+            <div>
+              <div style="font-size:0.92rem;font-weight:800;color:#ffffff;">Jhonatan & Antigravity</div>
+              <div style="font-size:0.72rem;color:#cbd5e1;">Google DeepMind Advanced Agentic Coding</div>
+            </div>
+          </div>
+          <div style="font-size:0.72rem;color:var(--text-muted);line-height:1.4;">
+            Desenvolvido em parceria com IA agentica avançada para criar o aplicativo metropolitano mais rápido, leve e preciso de Canoas e Porto Alegre.
+          </div>
+        </div>
+
+        <!-- Botão de Download do APK (Exibido apenas no navegador Web) -->
+        <a id="btn-download-apk" href="BusRadar.apk" download="BusRadar.apk" class="btn-download-apk-card">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span style="font-size:1.8rem;">📥</span>
+            <div>
+              <div style="font-size:0.95rem;font-weight:800;color:#fff;">Baixar Aplicativo Android (.apk)</div>
+              <div style="font-size:0.72rem;color:rgba(255,255,255,0.9);font-weight:500;">Versão 2.5.8 Oficial • Instalar / Atualizar</div>
+            </div>
+          </div>
+          <span class="btn-download-badge">APK ⬇️</span>
+        </a>
+
+        <!-- Deploy Invisível via Servidor (ADB USB / Wi-Fi, apenas quando acessado pelo PC) -->
+        <div id="adb-push-card" style="display:none;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.35);border-radius:12px;padding:10px 12px;margin-bottom:14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">
+            <span style="font-size:0.78rem;font-weight:800;color:#34d399;">📡 Instalar Invisível no Celular (ADB)</span>
+            <button id="btn-adb-install" class="btn-small" style="background:#10b981;color:#fff;font-weight:700;padding:5px 10px;">⚡ Enviar Agora</button>
+          </div>
+          <div id="adb-status-text" style="font-size:0.68rem;color:#cbd5e1;line-height:1.35;">
+            Conecte via USB ou Depuração Sem Fio (Wi-Fi) uma vez para instalar sem perguntas no Android.
+          </div>
+          <div style="display:flex;gap:6px;margin-top:8px;">
+            <input id="adb-wifi-host" type="text" placeholder="IP:Porta Wi-Fi (ex: 192.168.100.50:5555)" style="flex:1;background:#0f172a;color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:5px 8px;font-size:0.72rem;" />
+            <button id="btn-adb-connect" class="btn-small" style="background:#2563eb;color:#fff;padding:5px 8px;font-size:0.7rem;">Conectar</button>
+          </div>
+        </div>
+
+        <!-- Atualizador Nativo do APK (Exibido dentro do App Android via PackageInstaller) -->
+        <div id="apk-updater-card" style="display:none;background:rgba(37,99,235,0.12);border:1px solid rgba(59,130,246,0.4);border-radius:12px;padding:12px;margin-bottom:14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">
+            <span style="font-size:0.82rem;font-weight:800;color:#60a5fa;">🔄 Atualização do Aplicativo</span>
+            <span id="apk-current-version" style="font-size:0.68rem;color:#94a3b8;font-weight:700;">v2.5.8</span>
+          </div>
+          <div id="apk-update-status" style="font-size:0.72rem;color:#e2e8f0;margin-bottom:8px;line-height:1.35;">
+            Busque atualizações pela rede local ou GitHub Releases e instale direto pelo app.
+          </div>
+          <div id="apk-update-progress-wrap" style="display:none;background:#0f172a;border-radius:6px;height:8px;overflow:hidden;margin-bottom:8px;">
+            <div id="apk-update-progress-bar" style="width:0%;height:100%;background:linear-gradient(90deg,#2563eb,#10b981);transition:width 0.2s;"></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;">
+            <input id="updater-lan-url" type="text" placeholder="Servidor Rede (ex: http://192.168.100.179:8000)" style="background:#0f172a;color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:6px 8px;font-size:0.72rem;" />
+            <input id="updater-gh-repo" type="text" placeholder="GitHub Releases (ex: jhona1234-del/busradar)" style="background:#0f172a;color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:6px 8px;font-size:0.72rem;" />
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button id="btn-check-apk-update" class="btn-small" style="flex:1;background:#2563eb;color:#fff;padding:7px 10px;font-weight:700;">🔍 Verificar Agora</button>
+            <button id="btn-install-apk-update" class="btn-small" style="display:none;flex:1;background:#10b981;color:#fff;padding:7px 10px;font-weight:800;">⚡ Atualizar Agora</button>
+          </div>
+        </div>
+
+        <!-- Quick Action Grid (1 clique no ícone abre isto) -->
+        <div class="about-action-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">
+          <button id="about-btn-open-tile-cfg" class="btn-action-outline">
+            <span>⚙️</span> <span><b>Configurações</b><br><small style="color:var(--text-muted);font-size:0.65rem;">Linha do Trem (Trensurb)</small></span>
+          </button>
+          <button id="about-btn-open-log" class="btn-action-outline">
+            <span>📋</span> <span><b>Logs do App</b><br><small style="color:var(--text-muted);font-size:0.65rem;">Diagnóstico e erros</small></span>
+          </button>
+          <button id="about-btn-set-home" class="btn-action-outline">
+            <span>🏠</span> <span><b>Definir Casa</b><br><small style="color:var(--text-muted);font-size:0.65rem;">Salvar endereço fixo</small></span>
+          </button>
+          <button id="about-btn-open-dev" class="btn-action-outline">
+            <span>🛠️</span> <span><b>Modo Desenvolvedor</b><br><small style="color:var(--text-muted);font-size:0.65rem;">Telemetria ao vivo</small></span>
+          </button>
+        </div>
+
+        <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:12px;">
+          Aplicativo corporativo de alta performance para monitoramento e previsão de transporte público metropolitano.
+        </p>
+
+        <div class="about-spec-box">
+          <div class="spec-row">
+            <span class="spec-label">🗺️ Motor de Mapa:</span>
+            <span class="spec-val">RadarMap Nativo (Zero Dependências)</span>
+          </div>
+          <div class="spec-row">
+            <span class="spec-label">🌐 Arquitetura de Rede:</span>
+            <span class="spec-val">5 Níveis de Fallback Resiliente</span>
+          </div>
+          <div class="spec-row">
+            <span class="spec-label">📡 Provedor de Mapa:</span>
+            <span class="spec-val">OpenStreetMap Livre & Rápido</span>
+          </div>
+          <div class="spec-row">
+            <span class="spec-label">🚈 Metrô de Superfície:</span>
+            <span class="spec-val">Trensurb Linha 1 (22 Estações em Tempo Real)</span>
+          </div>
+          <div class="spec-row">
+            <span class="spec-label">📁 Gravador de Caixa-Preta:</span>
+            <span class="spec-val">Documentos/BusRadar_log.txt</span>
+          </div>
+          <div class="spec-row">
+            <span class="spec-label">🚀 Compatibilidade:</span>
+            <span class="spec-val">Android 8.0 até Android 17 (SDK 34+)</span>
+          </div>
+          <div class="spec-row">
+            <span class="spec-label">📦 Tamanho do Pacote:</span>
+            <span class="spec-val">~329 KB (Instalação offline direta)</span>
+          </div>
+        </div>
+
+        <div style="margin-top:14px;font-size:0.72rem;color:var(--text-muted);line-height:1.4;">
+          <b>🔒 Política de Privacidade & Segurança:</b><br>
+          O BusRadar opera de forma 100% privada. Suas coordenadas de GPS são utilizadas exclusivamente na memória volátil do aparelho para calcular distâncias até as paradas, sem armazenamento externo nem envio a servidores terceiros.
+        </div>
+        
+        <div style="margin-top:10px;font-size:0.7rem;color:var(--text-muted);">
+          <b>🛠️ Dica de Engenharia:</b> Dê 5 toques rápidos no ícone do ônibus no topo para abrir a telemetria do <b>Modo Desenvolvedor</b>.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-modal-ok" class="btn-confirm" style="width:100%;">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Configuration Modal (Trensurb) -->
+  <div id="tile-config-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card" style="max-width:340px;">
+      <div class="modal-header">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:1.4rem;">⚙️</span>
+          <div>
+            <div style="font-size:1.05rem;font-weight:800;color:#fff;">Configurações</div>
+            <div style="font-size:0.72rem;color:var(--accent-light);">Preferências do aplicativo</div>
+          </div>
+        </div>
+        <button id="btn-close-tile-config" class="btn-modal-close">✕</button>
+      </div>
+      <div class="modal-body" style="padding:16px 14px;">
+        <div style="background:rgba(255,255,255,0.05);padding:14px;border-radius:10px;border:1px solid var(--border);">
+          <label style="display:flex;align-items:flex-start;gap:12px;cursor:pointer;margin:0;">
+            <input type="checkbox" id="chk-show-trensurb" style="width:20px;height:20px;margin-top:2px;accent-color:#0284c7;cursor:pointer;" />
+            <div>
+              <b style="font-size:0.9rem;color:#fff;display:block;">Exibir Linha do Trem (Trensurb)</b>
+              <small style="display:block;color:var(--text-muted);font-size:0.74rem;margin-top:3px;line-height:1.35;">
+                Mostra estações e trens em tempo real no mapa. Deixe desmarcado para foco exclusivo em ônibus.
+              </small>
+            </div>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;gap:8px;">
+        <button id="btn-save-tile-config" class="btn-confirm" style="width:100%;">✓ Concluir</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Route Direction Modal (Sentido Centro vs Bairro) -->
+  <div id="route-direction-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card" style="max-width:340px;">
+      <div class="modal-header">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:1.4rem;">🧭</span>
+          <div>
+            <div id="route-direction-title" style="font-size:1.05rem;font-weight:800;color:#fff;">Sentido da Linha</div>
+            <div style="font-size:0.72rem;color:var(--accent-light);">Escolha a origem para traçar a rota</div>
+          </div>
+        </div>
+        <button id="btn-close-route-direction" class="btn-modal-close">✕</button>
+      </div>
+      <div class="modal-body" style="padding:14px 12px;">
+        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:12px;">
+          Selecione por onde a viagem começa para animar o traçado no mapa no sentido correto:
+        </p>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <button id="btn-dir-forward" class="btn-action-outline" style="padding:12px;text-align:left;display:flex;align-items:center;gap:12px;background:rgba(37,99,235,0.12);border-color:#2563eb;cursor:pointer;border-radius:10px;">
+            <span style="font-size:1.6rem;">🏢</span>
+            <div>
+              <b id="btn-dir-forward-title" style="font-size:0.88rem;color:#60a5fa;display:block;">Origem: Centro ➔ Bairro</b>
+              <small id="btn-dir-forward-sub" style="font-size:0.7rem;color:var(--text-muted);">Saindo do Centro de Canoas em direção ao Bairro</small>
+            </div>
+          </button>
+          <button id="btn-dir-reverse" class="btn-action-outline" style="padding:12px;text-align:left;display:flex;align-items:center;gap:12px;background:rgba(16,185,129,0.12);border-color:#10b981;cursor:pointer;border-radius:10px;">
+            <span style="font-size:1.6rem;">🏡</span>
+            <div>
+              <b id="btn-dir-reverse-title" style="font-size:0.88rem;color:#34d399;display:block;">Origem: Bairro ➔ Centro</b>
+              <small id="btn-dir-reverse-sub" style="font-size:0.7rem;color:var(--text-muted);">Saindo do Bairro em direção ao Centro</small>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast-notice" id="toast-notice"></div>
+
+  <script src="app.js?v=2.5.8"></script>
+</body>
+</html>

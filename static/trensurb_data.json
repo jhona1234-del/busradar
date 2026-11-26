@@ -1,0 +1,191 @@
+[
+  {
+    "id": 1,
+    "name": "Mercado",
+    "short": "MERC",
+    "city": "Porto Alegre",
+    "lat": -30.0278,
+    "lng": -51.2289,
+    "vip": true
+  },
+  {
+    "id": 2,
+    "name": "Rodoviária",
+    "short": "RODO",
+    "city": "Porto Alegre",
+    "lat": -30.0242,
+    "lng": -51.2186,
+    "vip": false
+  },
+  {
+    "id": 3,
+    "name": "São Pedro",
+    "short": "SPED",
+    "city": "Porto Alegre",
+    "lat": -30.0075,
+    "lng": -51.2092,
+    "vip": false
+  },
+  {
+    "id": 4,
+    "name": "Farrapos",
+    "short": "FARR",
+    "city": "Porto Alegre",
+    "lat": -29.9961,
+    "lng": -51.1978,
+    "vip": false
+  },
+  {
+    "id": 5,
+    "name": "Aeroporto",
+    "short": "AERO",
+    "city": "Porto Alegre",
+    "lat": -29.9886,
+    "lng": -51.1897,
+    "vip": false
+  },
+  {
+    "id": 6,
+    "name": "Anchieta",
+    "short": "ANCH",
+    "city": "Porto Alegre",
+    "lat": -29.9744,
+    "lng": -51.1844,
+    "vip": false
+  },
+  {
+    "id": 7,
+    "name": "Niterói",
+    "short": "NITE",
+    "city": "Canoas",
+    "lat": -29.9536,
+    "lng": -51.1836,
+    "vip": false
+  },
+  {
+    "id": 8,
+    "name": "Fátima",
+    "short": "FATI",
+    "city": "Canoas",
+    "lat": -29.9392,
+    "lng": -51.1814,
+    "vip": false
+  },
+  {
+    "id": 9,
+    "name": "Canoas",
+    "short": "CANO",
+    "city": "Canoas",
+    "lat": -29.9197,
+    "lng": -51.1803,
+    "vip": true
+  },
+  {
+    "id": 10,
+    "name": "Mathias Velho",
+    "short": "MVEL",
+    "city": "Canoas",
+    "lat": -29.9042,
+    "lng": -51.18,
+    "vip": true
+  },
+  {
+    "id": 11,
+    "name": "São Luís",
+    "short": "SLUI",
+    "city": "Canoas",
+    "lat": -29.8911,
+    "lng": -51.1806,
+    "vip": true
+  },
+  {
+    "id": 12,
+    "name": "Petrobras",
+    "short": "PETR",
+    "city": "Canoas/Esteio",
+    "lat": -29.8731,
+    "lng": -51.1814,
+    "vip": false
+  },
+  {
+    "id": 13,
+    "name": "Esteio",
+    "short": "ESTE",
+    "city": "Esteio",
+    "lat": -29.8542,
+    "lng": -51.1822,
+    "vip": false
+  },
+  {
+    "id": 14,
+    "name": "Luiz Pasteur",
+    "short": "LPAZ",
+    "city": "Sapucaia",
+    "lat": -29.8394,
+    "lng": -51.1683,
+    "vip": false
+  },
+  {
+    "id": 15,
+    "name": "Sapucaia",
+    "short": "SAPU",
+    "city": "Sapucaia",
+    "lat": -29.8272,
+    "lng": -51.1506,
+    "vip": false
+  },
+  {
+    "id": 16,
+    "name": "Unisinos",
+    "short": "UNIS",
+    "city": "São Leopoldo",
+    "lat": -29.7958,
+    "lng": -51.15,
+    "vip": false
+  },
+  {
+    "id": 17,
+    "name": "São Leopoldo",
+    "short": "SLEO",
+    "city": "São Leopoldo",
+    "lat": -29.7667,
+    "lng": -51.1461,
+    "vip": false
+  },
+  {
+    "id": 18,
+    "name": "Rio dos Sinos",
+    "short": "RSIN",
+    "city": "São Leopoldo",
+    "lat": -29.7508,
+    "lng": -51.1394,
+    "vip": false
+  },
+  {
+    "id": 19,
+    "name": "Santo Afonso",
+    "short": "SAFO",
+    "city": "Novo Hamburgo",
+    "lat": -29.7289,
+    "lng": -51.1331,
+    "vip": false
+  },
+  {
+    "id": 20,
+    "name": "Fenac",
+    "short": "FENC",
+    "city": "Novo Hamburgo",
+    "lat": -29.7042,
+    "lng": -51.1344,
+    "vip": false
+  },
+  {
+    "id": 21,
+    "name": "Novo Hamburgo",
+    "short": "NHAM",
+    "city": "Novo Hamburgo",
+    "lat": -29.6869,
+    "lng": -51.1319,
+    "vip": false
+  }
+]
